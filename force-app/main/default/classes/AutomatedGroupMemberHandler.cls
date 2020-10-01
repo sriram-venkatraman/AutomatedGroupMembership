@@ -78,9 +78,10 @@ public with sharing class AutomatedGroupMemberHandler {
             }
         }
 
-        Map<String, Id> existingcgmMap = new Map<String, Id>();
-        for (CollaborationGroupMember cgm : [select Id, CollaborationGroupId, MemberId from CollaborationGroupMember where MemberId = :fullUserIdList]) {
-            existingcgmMap.put(cgm.CollaborationGroupId + '-' + cgm.MemberId, cgm.Id);
+        Map<String, String> existingcgmMap = new Map<String, String>();
+        
+        for (CollaborationGroupMember cgm : [select Id, CollaborationGroupId, MemberId, CollaborationGroup.OwnerId from CollaborationGroupMember where CollaborationGroup.name = :groupList]) {
+            existingcgmMap.put(cgm.CollaborationGroupId + '-' + cgm.MemberId, (cgm.MemberId == cgm.CollaborationGroup.OwnerId ? 'o:' : '') + cgm.Id);
         }
         system.debug('Existing: ' + existingcgmMap.size());
 
@@ -112,10 +113,13 @@ public with sharing class AutomatedGroupMemberHandler {
 
         for (String cgmKey : existingcgmMap.keySet()) {
             if (!fullcgmKeys.contains(cgmKey)) {
-                deletecgmList.add(new CollaborationGroupMember(Id = existingcgmMap.get(cgmKey))); 
+                if (!existingcgmMap.get(cgmKey).startsWith('o:')) {
+                    deletecgmList.add(new CollaborationGroupMember(Id = existingcgmMap.get(cgmKey))); 
+                }
             }
         }
 
         system.debug('Deletes: ' + deletecgmList.size());
+        delete deletecgmList;
     }
 }
