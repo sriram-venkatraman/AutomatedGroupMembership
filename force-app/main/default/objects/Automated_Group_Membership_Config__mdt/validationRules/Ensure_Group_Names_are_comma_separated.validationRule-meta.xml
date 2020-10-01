@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Ensure_Group_Names_are_comma_separated</fullName>
+    <active>true</active>
+    <errorConditionFormula>NOT(REGEX(Group_Names__c, &quot;^[a-zA-Z0-9_\\s\\-\\.\\&apos;]+(\\,[a-zA-Z0-9_\\s\\-\\.\\&apos;]+)*$&quot;)) || ISBLANK(Group_Names__c)</errorConditionFormula>
+    <errorDisplayField>Group_Names__c</errorDisplayField>
+    <errorMessage>Please ensure multiple group names are comma separated</errorMessage>
+</ValidationRule>

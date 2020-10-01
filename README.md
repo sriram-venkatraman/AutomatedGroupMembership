@@ -9,6 +9,7 @@ The core class __AutomatedGroupMemberHandler__ helps add and delete Collaboratio
 * Ability to specify if a Collaboration Group membership needs to be deleted if non-owner members don't fit the criteria (WhereClause) mentioned in the configuration def. 
 * Ability to specify Member roles and Notification frequencies via config
 
+__Best Practice Recommendation__ - Use One configuration per group and one group per configuration to avoid confusions when involving User Removals. I am not enforcing this rule in the code base though.
 
 ## Sample Callout
 ### Call from Anonymous window or from a Batch class

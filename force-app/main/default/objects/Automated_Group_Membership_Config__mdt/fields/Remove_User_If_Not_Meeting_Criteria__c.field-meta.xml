@@ -4,7 +4,8 @@
     <defaultValue>false</defaultValue>
     <externalId>false</externalId>
     <fieldManageability>SubscriberControlled</fieldManageability>
-    <inlineHelpText>Check this flag if you want to remove the user from the group not meeting the criteria</inlineHelpText>
+    <inlineHelpText>USE WITH CAUTION!!
+Check this flag if you want to remove the user from the group not meeting the criteria. If checked, all Groups  across all config will be within scope of membership removal</inlineHelpText>
     <label>Remove User If Not Meeting Criteria</label>
     <type>Checkbox</type>
 </CustomField>
