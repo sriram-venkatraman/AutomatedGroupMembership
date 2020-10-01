@@ -1,9 +1,18 @@
 public with sharing class AutomatedGroupMemberHandler {
-    public AutomatedGroupMemberHandler() {
-
-    }
     private static Integer MAX_CONFIG_GROUPS_ALLOWED = 50;
-    
+    private Set<String> listOfUserIds = new Set<String>();
+
+    public AutomatedGroupMemberHandler() {
+    }
+
+    public AutomatedGroupMemberHandler(List<String> listUIds) {
+        this.listOfUserIds.addAll(listUIds);
+    }
+
+    public AutomatedGroupMemberHandler(Set<String> listUIds) {
+        this.listOfUserIds.addAll(listUIds);
+    }
+
     class ConfigDef {
         String configLabel;
         String whereClause;
@@ -18,13 +27,13 @@ public with sharing class AutomatedGroupMemberHandler {
         List<Automated_Group_Membership_Config__mdt> config;
         try {
             config = [select MasterLabel, 
-                            Where_Clause__c, 
-                            Group_Names__c,
-                            Notification_Frequency__c,
-                            Role__c,
-                            Remove_User_If_Not_Meeting_Criteria__c
-                     from   Automated_Group_Membership_Config__mdt 
-                     where  IsActive__c = true
+                             Where_Clause__c, 
+                             Group_Names__c,
+                             Notification_Frequency__c,
+                             Role__c,
+                             Remove_User_If_Not_Meeting_Criteria__c
+                     from    Automated_Group_Membership_Config__mdt 
+                     where   IsActive__c = true
                     ];
         } catch(Exception ex) {
             throw new AutomatedGroupMemberHandler.HandlerException(ex.getMessage() + '\nStack Trace: ' + ex.getStackTraceString());
@@ -95,7 +104,9 @@ public with sharing class AutomatedGroupMemberHandler {
             // Future enhancement: May have to break the process into chunks of 50 def records and 
             // run them via flex queues.
             try {
-                configDefList[i].userIdList = Database.query(userQuery + ' ' + configDefList[i].whereClause);
+                configDefList[i].userIdList = Database.query(userQuery + ' ' + 
+                                                             (this.listOfUserIds.size() > 0 ? ' and Id = :listOfUserIds ' : '' ) + 
+                                                             configDefList[i].whereClause );
             } catch(Exception ex) {
                 throw new AutomatedGroupMemberHandler.HandlerException(ex.getMessage() + '\nStack Trace: ' + ex.getStackTraceString());
             } 
@@ -103,12 +114,21 @@ public with sharing class AutomatedGroupMemberHandler {
                 fullUserIdList.add(u.Id);
             }
         }
+        System.debug('Full User List: ' + fullUserIdList);
 
         Map<String, String> existingcgmMap = new Map<String, String>();
         
-        for (CollaborationGroupMember cgm : [select Id, CollaborationGroupId, MemberId, CollaborationGroup.OwnerId from CollaborationGroupMember where CollaborationGroup.name = :groupList]) {
-            existingcgmMap.put(cgm.CollaborationGroupId + '-' + cgm.MemberId, (cgm.MemberId == cgm.CollaborationGroup.OwnerId ? 'o:' : '') + cgm.Id);
+        if (this.listOfUserIds.size() <= 0) {
+            for (CollaborationGroupMember cgm : [select Id, CollaborationGroupId, MemberId, CollaborationGroup.OwnerId from CollaborationGroupMember where CollaborationGroup.name = :groupList]) {
+                existingcgmMap.put(cgm.CollaborationGroupId + '-' + cgm.MemberId, (cgm.MemberId == cgm.CollaborationGroup.OwnerId ? 'o:' : '') + cgm.Id);
+            }
         }
+        else {
+            for (CollaborationGroupMember cgm : [select Id, CollaborationGroupId, MemberId, CollaborationGroup.OwnerId from CollaborationGroupMember where CollaborationGroup.name = :groupList and MemberId = :listOfUserIds]) {
+                existingcgmMap.put(cgm.CollaborationGroupId + '-' + cgm.MemberId, (cgm.MemberId == cgm.CollaborationGroup.OwnerId ? 'o:' : '') + cgm.Id);
+            }
+        }
+        system.debug('Existing CGM List: ' + existingcgmMap);
         system.debug('Existing: ' + existingcgmMap.size());
 
         List<CollaborationGroupMember> newcgmList = new List<CollaborationGroupMember>();
@@ -145,7 +165,7 @@ public with sharing class AutomatedGroupMemberHandler {
         }
 
         for (String cgmKey : existingcgmMap.keySet()) {
-            if (groupsQualifyForUserRemoval.contains(cgmKey.split('-')[0])) {
+            if (groupsQualifyForUserRemoval.contains(cgmKey.split('-')[0]) && this.listOfUserIds.contains(cgmKey.split('-')[1])) {
                 if (!fullcgmKeys.contains(cgmKey)) {
                     if (!existingcgmMap.get(cgmKey).startsWith('o:')) {
                         deletecgmList.add(new CollaborationGroupMember(Id = existingcgmMap.get(cgmKey))); 
@@ -158,6 +178,8 @@ public with sharing class AutomatedGroupMemberHandler {
         if (deletecgmList.size() > 0 ) {
             delete deletecgmList;
         }
+
+        return;
     }
 
     public class HandlerException extends Exception { }
