@@ -2,7 +2,8 @@ public with sharing class AutomatedGroupMemberHandler {
     public AutomatedGroupMemberHandler() {
 
     }
-
+    private static Integer MAX_CONFIG_GROUPS_ALLOWED = 50;
+    
     class ConfigDef {
         String configLabel;
         String whereClause;
@@ -14,42 +15,52 @@ public with sharing class AutomatedGroupMemberHandler {
     }
 
     public void addMembers() {
-        List<Automated_Group_Membership_Config__mdt> config = [select MasterLabel, 
-                                                                        Where_Clause__c, 
-                                                                        Group_Names__c,
-                                                                        Notification_Frequency__c,
-                                                                        Role__c,
-                                                                        Remove_User_If_Not_Meeting_Criteria__c
-                                                                from   Automated_Group_Membership_Config__mdt 
-                                                                where  IsActive__c = true
-                                                                limit 50];
+        List<Automated_Group_Membership_Config__mdt> config;
+        try {
+            config = [select MasterLabel, 
+                            Where_Clause__c, 
+                            Group_Names__c,
+                            Notification_Frequency__c,
+                            Role__c,
+                            Remove_User_If_Not_Meeting_Criteria__c
+                     from   Automated_Group_Membership_Config__mdt 
+                     where  IsActive__c = true
+                    ];
+        } catch(Exception ex) {
+            throw new AutomatedGroupMemberHandler.HandlerException(ex.getMessage() + '\nStack Trace: ' + ex.getStackTraceString());
+        } 
+
+        if (config.size() == 0) {
+            System.Debug('No Configuration found');
+            return;
+        }
+        if (config.size() > MAX_CONFIG_GROUPS_ALLOWED) {
+            throw new AutomatedGroupMemberHandler.HandlerException('Error! Process can not handle more than ' + MAX_CONFIG_GROUPS_ALLOWED + ' Active Configuration Definitions.');
+        }
 
         Set<String> groupList = new Set<String>();
         List<String> tmpList;
         List<ConfigDef> configDefList = new List<ConfigDef>();
         for (Automated_Group_Membership_Config__mdt c : config) {
             tmpList = c.Group_Names__c.split(',');
+            groupList.addAll(tmpList);
             
             ConfigDef cd = new ConfigDef();
             cd.configLabel = c.MasterLabel;
             cd.whereClause = c.Where_Clause__c;
-            switch on c.Notification_Frequency__c {
-                when 'Every Post' {
-                    cd.notificationFrequency = 'P';
-                }
-                when 'Daily' {
-                    cd.notificationFrequency = 'D';
-                }
-                when 'Weekly' {
-                    cd.notificationFrequency = 'W';
-                }
-                when else {
-                    cd.notificationFrequency = 'N';
-                }
+
+            cd.notificationFrequency = 'N';
+            if (c.Notification_Frequency__c == 'Every Post') {
+                cd.notificationFrequency = 'P';
             }
-            groupList.addAll(tmpList);
-            
+            if (c.Notification_Frequency__c == 'Daily') {
+                cd.notificationFrequency = 'D';
+            }
+            if (c.Notification_Frequency__c == 'Weekly') {
+                cd.notificationFrequency = 'W';
+            }
             cd.role = (c.Role__c == 'Member' ? 'Standard' : 'Admin');
+            cd.removeUsers = c.Remove_User_If_Not_Meeting_Criteria__c;
 
             cd.groupIdMap = new Map<String, String>();
             for (String s : tmpList) {
@@ -61,18 +72,33 @@ public with sharing class AutomatedGroupMemberHandler {
         system.debug(configDefList);
 
         Map<String, String> groupMap = new Map<String, String>();
-        for (CollaborationGroup cg : [select id, name from collaborationgroup where isarchived = false and name = :groupList]) {
-            groupMap.put(cg.name, cg.id);
-        }
+        try {
+            for (CollaborationGroup cg : [select id, name from collaborationgroup where isarchived = false and name = :groupList]) {
+                groupMap.put(cg.name, cg.id);
+            }
+        } catch(Exception ex) {
+            throw new AutomatedGroupMemberHandler.HandlerException(ex.getMessage() + '\nStack Trace: ' + ex.getStackTraceString());
+        }         
 
         Set<Id> fullUserIdList = new Set<Id>();
         String userQuery = 'select Id from User where IsActive = true';
 
+        // Process thru config def
         for (Integer i = 0; i < configDefList.size(); i++) {
+            // Collect group name + Id in the map for each config Definition
             for (String k : configDefList[i].groupIdMap.keySet()) {
                 configDefList[i].groupIdMap.put(k, groupMap.get(k));
             } 
-            configDefList[i].userIdList = Database.query(userQuery + ' ' + configDefList[i].whereClause);
+
+            // For each config def, run the user criteria query. WARNING this is where you can get 
+            // SOQL 101 if we didn't limit the number of Config Def. 
+            // Future enhancement: May have to break the process into chunks of 50 def records and 
+            // run them via flex queues.
+            try {
+                configDefList[i].userIdList = Database.query(userQuery + ' ' + configDefList[i].whereClause);
+            } catch(Exception ex) {
+                throw new AutomatedGroupMemberHandler.HandlerException(ex.getMessage() + '\nStack Trace: ' + ex.getStackTraceString());
+            } 
             for (User u : configDefList[i].userIdList) {
                 fullUserIdList.add(u.Id);
             }
@@ -87,12 +113,17 @@ public with sharing class AutomatedGroupMemberHandler {
 
         List<CollaborationGroupMember> newcgmList = new List<CollaborationGroupMember>();
         Set<String> fullcgmKeys = new Set<String>();
+
+        // Used if group membership needs to be removed for users no longer matching criteria
         List<CollaborationGroupMember> deletecgmList = new List<CollaborationGroupMember>();
 
-        Set<String> newcgmKeys = new Set<String>();
         CollaborationGroupMember cgm;
+        Set<String> groupsQualifyForUserRemoval = new Set<String>();
         for (ConfigDef cd : configDefList) {
             for (String g : cd.groupIdMap.values()) {
+                if (cd.removeUsers) {
+                    groupsQualifyForUserRemoval.add(g);
+                }
                 for (User u : cd.userIdList) {
                     cgm = new CollaborationGroupMember();
                     cgm.CollaborationGroupId = g;
@@ -109,17 +140,25 @@ public with sharing class AutomatedGroupMemberHandler {
 
         system.debug('Full: ' + fullcgmKeys.size());
         system.debug('Adds: ' + newcgmList.size());
-        insert newcgmList;
+        if (newcgmList.size() > 0) {
+            insert newcgmList;
+        }
 
         for (String cgmKey : existingcgmMap.keySet()) {
-            if (!fullcgmKeys.contains(cgmKey)) {
-                if (!existingcgmMap.get(cgmKey).startsWith('o:')) {
-                    deletecgmList.add(new CollaborationGroupMember(Id = existingcgmMap.get(cgmKey))); 
+            if (groupsQualifyForUserRemoval.contains(cgmKey.split('-')[0])) {
+                if (!fullcgmKeys.contains(cgmKey)) {
+                    if (!existingcgmMap.get(cgmKey).startsWith('o:')) {
+                        deletecgmList.add(new CollaborationGroupMember(Id = existingcgmMap.get(cgmKey))); 
+                    }
                 }
             }
         }
 
         system.debug('Deletes: ' + deletecgmList.size());
-        delete deletecgmList;
+        if (deletecgmList.size() > 0 ) {
+            delete deletecgmList;
+        }
     }
+
+    public class HandlerException extends Exception { }
 }
