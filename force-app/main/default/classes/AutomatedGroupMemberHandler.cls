@@ -129,7 +129,7 @@ public with sharing class AutomatedGroupMemberHandler {
 
         Map<String, String> existingcgmMap = new Map<String, String>();
         
-        // Collect existing Group Membership records
+        // Collect existing Group Membership records; Put a 'o:' to ensure the cgm record is actually for the Group Owner
         if (this.listOfUserIds.size() <= 0) {
             for (CollaborationGroupMember cgm : [select Id, CollaborationGroupId, MemberId, CollaborationGroup.OwnerId from CollaborationGroupMember where CollaborationGroup.name = :groupList]) {
                 existingcgmMap.put(cgm.CollaborationGroupId + '-' + cgm.MemberId, (cgm.MemberId == cgm.CollaborationGroup.OwnerId ? 'o:' : '') + cgm.Id);
@@ -143,7 +143,7 @@ public with sharing class AutomatedGroupMemberHandler {
         System.debug('Existing: ' + existingcgmMap.size());
 
         List<CollaborationGroupMember> newcgmList = new List<CollaborationGroupMember>();
-        Set<String> fullcgmKeys = new Set<String>();
+        Set<String> tobestatecgmKeys = new Set<String>();
 
         // Used if group membership needs to be removed for users no longer matching criteria
         List<CollaborationGroupMember> deletecgmList = new List<CollaborationGroupMember>();
@@ -164,8 +164,8 @@ public with sharing class AutomatedGroupMemberHandler {
                     cgm.CollaborationRole = cd.role;
                     cgm.NotificationFrequency = cd.notificationFrequency;
                     // to be state key list (groupid+userid)
-                    fullcgmKeys.add(g + '-' + u.Id);
-                    
+                    tobestatecgmKeys.add(g + '-' + u.Id);
+
                     // add to the new list only if the membership doesn't exist
                     if (!existingcgmMap.containsKey(g + '-' + u.Id)) {
                         newcgmList.add(cgm);
@@ -174,15 +174,22 @@ public with sharing class AutomatedGroupMemberHandler {
             }
         }
 
-        system.debug('Full: ' + fullcgmKeys.size());
+        system.debug('Full: ' + tobestatecgmKeys.size());
         system.debug('Adds: ' + newcgmList.size());
         if (newcgmList.size() > 0) {
             insert newcgmList;
         }
 
+        // Parse thru' existing membership; for every group+memberid combo, see if it should exists based
+        // on the tobestatekey list; 
         for (String cgmKey : existingcgmMap.keySet()) {
+            // Do deletes only if the Group was identified in on of the config for user removals 
+            // Also limit the user removal only to the list of users that might have been passed to this class via
+            // contstructor
             if (groupsQualifyForUserRemoval.contains(cgmKey.split('-')[0]) && this.listOfUserIds.contains(cgmKey.split('-')[1])) {
-                if (!fullcgmKeys.contains(cgmKey)) {
+                if (!tobestatecgmKeys.contains(cgmKey)) {
+                    // You can't delete a owner of the group. So ensure the member record to be removed is not 
+                    // the owner member record before deleting
                     if (!existingcgmMap.get(cgmKey).startsWith('o:')) {
                         deletecgmList.add(new CollaborationGroupMember(Id = existingcgmMap.get(cgmKey))); 
                     }
