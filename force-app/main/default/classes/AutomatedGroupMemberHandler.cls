@@ -23,7 +23,7 @@ public with sharing class AutomatedGroupMemberHandler {
         Boolean removeUsers;
     }
 
-    public void addMembers() {
+    public void addDeleteMembers() {
         List<Automated_Group_Membership_Config__mdt> config;
         try {
             config = [select MasterLabel, 
