@@ -10,6 +10,7 @@ public with sharing class AutomatedGroupMemberHandler {
         List<User> userIdList;
         String notificationFrequency;
         String role;
+        Boolean removeUsers;
     }
 
     public void addMembers() {
@@ -17,7 +18,8 @@ public with sharing class AutomatedGroupMemberHandler {
                                                                         Where_Clause__c, 
                                                                         Group_Names__c,
                                                                         Notification_Frequency__c,
-                                                                        Role__c
+                                                                        Role__c,
+                                                                        Remove_User_If_Not_Meeting_Criteria__c
                                                                 from   Automated_Group_Membership_Config__mdt 
                                                                 where  IsActive__c = true
                                                                 limit 50];
@@ -76,13 +78,17 @@ public with sharing class AutomatedGroupMemberHandler {
             }
         }
 
-        Set<String> existingcgmList = new Set<String>();
-        for (CollaborationGroupMember cgm : [select CollaborationGroupId, MemberId from CollaborationGroupMember where MemberId = :fullUserIdList]) {
-            existingcgmList.add(cgm.CollaborationGroupId + '-' + cgm.MemberId);
+        Map<String, Id> existingcgmMap = new Map<String, Id>();
+        for (CollaborationGroupMember cgm : [select Id, CollaborationGroupId, MemberId from CollaborationGroupMember where MemberId = :fullUserIdList]) {
+            existingcgmMap.put(cgm.CollaborationGroupId + '-' + cgm.MemberId, cgm.Id);
         }
+        system.debug('Existing: ' + existingcgmMap.size());
 
         List<CollaborationGroupMember> newcgmList = new List<CollaborationGroupMember>();
+        Set<String> fullcgmKeys = new Set<String>();
+        List<CollaborationGroupMember> deletecgmList = new List<CollaborationGroupMember>();
 
+        Set<String> newcgmKeys = new Set<String>();
         CollaborationGroupMember cgm;
         for (ConfigDef cd : configDefList) {
             for (String g : cd.groupIdMap.values()) {
@@ -92,13 +98,24 @@ public with sharing class AutomatedGroupMemberHandler {
                     cgm.MemberId = u.Id;
                     cgm.CollaborationRole = cd.role;
                     cgm.NotificationFrequency = cd.notificationFrequency;
-                    if (!existingcgmList.contains(g + '-' + u.Id)) {
+                    fullcgmKeys.add(g + '-' + u.Id);
+                    if (!existingcgmMap.containsKey(g + '-' + u.Id)) {
                         newcgmList.add(cgm);
                     }
                 }
             }
         }
-        system.debug(newcgmList);
+
+        system.debug('Full: ' + fullcgmKeys.size());
+        system.debug('Adds: ' + newcgmList.size());
         insert newcgmList;
+
+        for (String cgmKey : existingcgmMap.keySet()) {
+            if (!fullcgmKeys.contains(cgmKey)) {
+                deletecgmList.add(new CollaborationGroupMember(Id = existingcgmMap.get(cgmKey))); 
+            }
+        }
+
+        system.debug('Deletes: ' + deletecgmList.size());
     }
 }
