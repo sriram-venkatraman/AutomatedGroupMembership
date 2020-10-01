@@ -9,13 +9,16 @@ The core class __AutomatedGroupMemberHandler__ helps add and delete Collaboratio
 * Ability to specify if a Collaboration Group membership needs to be deleted if non-owner members don't fit the criteria (WhereClause) mentioned in the configuration def. 
 * Ability to specify Member roles and Notification frequencies via config
 
+
 ## Sample Callout
+### Call from Anonymous window or from a Batch class
 ```
 AutomatedGroupMemberHandler agmh = new AutomatedGroupMemberHandler();
 agmh.addDeleteMembers();
 ```
 OR
 
+### Call from User Trigger after filtering a list of user id to pass to the constructor
 ```
 Set<String> s = new Set<String>();
 s.add('<id>');
