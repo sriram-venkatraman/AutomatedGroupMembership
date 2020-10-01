@@ -11,7 +11,6 @@ The core class __AutomatedGroupMemberHandler__ helps add and delete Collaboratio
 
 ## Sample Callout
 ```
-```
 AutomatedGroupMemberHandler agmh = new AutomatedGroupMemberHandler();
 agmh.addDeleteMembers();
 ```
