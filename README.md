@@ -1,6 +1,6 @@
 [![Deploy to Salesforce](https://andrewfawcett.files.wordpress.com/2014/09/deploy.png)](https://githubsfdeploy.herokuapp.com/app/githubdeploy/sriram-venkatraman/AutomatedGroupMembership)
 
-# HTTP Callout Framework
+# Automated Chatter Group Membership
 *Note: Still tidying up with test classes and documentation. Functionality seems to work reasonably well although I haven't done extensive test*
 
 The core class __AutomatedGroupMemberHandler__ helps add and delete Collaboration Group members automatically based on configuration defined in custom metadata.
